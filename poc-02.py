@@ -125,7 +125,7 @@ class StateDriver(Storage):
 
     def update(self, message):
         """StateDriver Must Contain MetaData for last synced messages rather
-        than messages.  For now we are putting messages."""
+        than full emails. For now we are putting full messages."""
 
         #TODO: we have to later think of its implementation and format.
         super(StateDriver, self).update(message)
