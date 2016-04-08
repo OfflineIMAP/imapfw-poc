@@ -3,13 +3,11 @@
 # https://github.com/OfflineIMAP/imapfw/wiki/sync-02
 #
 # TODO:
-# 1. Merge the changes in the engine so that both sides get the same changes.
-# 2. Mark unnecessary changes according to each side.
-# 3. Send the result of the merge to both sides.
-# 4. Learn the state driver to only record successful updates.
-# 5. Learn deletions.
-# 6. Expose updates to the rascal.
-# 7. Turn into concurrent mode.
+# 1. Merge the changes in the engine for messages having changes in both sides.
+# 2. Learn the state driver to only record successful updates.
+# 3. Learn deletions.
+# 4. Expose updates to the rascal.
+# 5. Turn into concurrent mode.
 
 
 from functools import total_ordering
