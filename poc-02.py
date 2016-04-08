@@ -128,7 +128,7 @@ class StateDriver(Storage):
         than full emails. For now we are putting full messages."""
 
         #TODO: we have to later think of its implementation and format.
-        super(StateDriver, self).update(message)
+        super(StateDriver, self).update(deepcopy(message))
 
 
 #TODO: fake real drivers.
@@ -151,10 +151,9 @@ class StateController(object):
         - their state backend.
     """
 
-    def __init__(self, driver, ourState, theirState):
+    def __init__(self, driver, state):
         self.driver = driver # The driver we own.
-        self.state = ourState
-        self.theirState = theirState
+        self.state = state
 
     def update(self, theirMessages):
         """Update this side with the messages from the other side."""
@@ -162,7 +161,7 @@ class StateController(object):
         for theirMessage in theirMessages:
             try:
                 self.driver.update(theirMessage)
-                self.theirState.update(theirMessage) # Would be async.
+                self.state.update(theirMessage) # Would be async.
             except:
                 raise # Would handle or warn.
 
@@ -175,12 +174,6 @@ class StateController(object):
         changedMessages = Messages() # Collection of new, deleted and updated messages.
         messages = self.driver.search() # Would be async.
         stateMessages = self.state.search() # Would be async.
-
-        #TODO: we have to read both states to know what to sync. The current
-        # implementation is wrong.
-        for message in self.theirState.search():
-            if message not in stateMessages:
-                stateMessages.append(deepcopy(message))
 
         for message in messages:
             if message not in stateMessages:
@@ -204,20 +197,18 @@ class StateController(object):
 class Engine(object):
     """The engine."""
     def __init__(self, left, right):
-        leftState = StateDriver([]) # Would be an emitter.
-        rightState = StateDriver([]) # Would be an emitter.
+        state = StateDriver([]) # Would be an emitter.
         # Add the state controller to the chain of controllers of the drivers.
         # Real driver might need API to work on chained controllers.
-        self.left = StateController(left, leftState, rightState)
-        self.right = StateController(right, rightState, leftState)
+        self.left = StateController(left, state)
+        self.right = StateController(right, state)
 
     def debug(self, title):
         print('\n')
         print(title)
         print("left:       %s"% self.left.driver.messages)
-        print("state left: %s"% self.left.state.messages)
         print("rght:       %s"% self.right.driver.messages)
-        print("state rght: %s"% self.right.state.messages)
+        print("state: %s"% self.left.state.messages) # leftState == rightState
 
     def run(self):
         leftMessages = self.left.getChanges() # Would be async.
