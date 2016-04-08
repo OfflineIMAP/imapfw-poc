@@ -206,8 +206,8 @@ class Engine(object):
     def debug(self, title):
         print('\n')
         print(title)
-        print("left:       %s"% self.left.driver.messages)
-        print("rght:       %s"% self.right.driver.messages)
+        print("left:  %s"% self.left.driver.messages)
+        print("rght:  %s"% self.right.driver.messages)
         print("state: %s"% self.left.state.messages) # leftState == rightState
 
     def run(self):
