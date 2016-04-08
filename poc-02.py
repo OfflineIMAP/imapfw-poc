@@ -204,7 +204,6 @@ class Engine(object):
         self.right = StateController(right, state)
 
     def debug(self, title):
-        print('\n')
         print(title)
         print("left:  %s"% self.left.driver.messages)
         print("rght:  %s"% self.right.driver.messages)
@@ -214,14 +213,13 @@ class Engine(object):
         leftMessages = self.left.getChanges() # Would be async.
         rightMessages = self.right.getChanges() # Would be async.
 
-        print("## Changes:")
+        print("\n## Changes found:")
         print("- from left: %s"% leftMessages)
         print("- from rght: %s"% rightMessages)
 
         self.left.update(rightMessages)
         self.right.update(leftMessages)
 
-        print("\n## Update done.")
 
 if __name__ == '__main__':
 
@@ -249,16 +247,19 @@ if __name__ == '__main__':
 
     # Start engine.
     engine = Engine(left, right)
-    engine.debug("Initial content of both sides:")
 
-    print("\n# PASS 1")
+    print("\n# RUN 1")
+    engine.debug("## Before RUN 1")
     engine.run()
-    engine.debug("# Run of PASS 1: done.")
+    engine.debug("\n## After RUN 1.")
+    print("\n# RUN 1 done")
+
+
+    print("\n# RUN 2")
     m2r.markImportant()
-    engine.debug("# After Run1 but before Run 2")
-
-    print("\n# PASS 2")
+    engine.debug("## Before RUN 2")
     engine.run()
-    engine.debug("# Run of PASS 2: done.")
+    engine.debug("\n## After RUN 2.")
+    print("\n# RUN 2 done")
 
     #TODO: PASS 3 with changed messages.
