@@ -4,6 +4,8 @@
 #
 # TODO:
 # 1. Merge the changes in the engine for messages having changes in both sides.
+#    This allows to mark identical changes to avoid propagating them to the
+#    driver.
 # 2. Learn the state driver to only record successful updates.
 # 3. Learn deletions.
 # 4. Expose updates to the rascal.
