@@ -13,7 +13,7 @@
 
 
 from functools import total_ordering
-from collections import UserList
+from collections import UserDict
 from copy import deepcopy
 
 
@@ -87,15 +87,19 @@ class Message(object):
         self.flags['read'] = False
 
 
-class Messages(UserList):
+class Messages(UserDict):
     """Enable collections of messages the easy way."""
-    pass #TODO: implement collection comparison.
+
+    def add(self, message):
+        """Add or erase message."""
+
+        self.data[message.uid] = deepcopy(message)
 
 
 # Fake any storage. Allows making this PoC more simple.
-class Storage(object):
-    def __init__(self, list_messages):
-        self.messages = Messages(list_messages) # Fake the real data.
+class Storage(UserDict):
+    def __init__(self, dict_messages):
+        self.messages = Messages(dict_messages) # Fake the real data.
 
     def search(self):
         return self.messages
@@ -114,19 +118,7 @@ class Storage(object):
         # what should we do should we remove m4l or what.
 
         #FIXME: updates and new messages are handled. Not the deletions.
-
-        if newMessage not in self.messages:
-            self.messages.append(deepcopy(newMessage))
-            return
-
-        for message in self.messages:
-            if message.uid == newMessage.uid:
-                # Update message.
-                message.body = newMessage.body
-                message.flags = newMessage.flags
-                return
-
-        assert("should never hit this point")
+        self.messages.add(newMessage)
 
 
 class StateDriver(Storage):
@@ -137,7 +129,7 @@ class StateDriver(Storage):
         than full emails. For now we are putting full messages."""
 
         #TODO: we have to later think of its implementation and format.
-        super(StateDriver, self).update(deepcopy(message))
+        super(StateDriver, self).update(message)
 
 
 #TODO: fake real drivers.
@@ -167,7 +159,7 @@ class StateController(object):
     def update(self, theirMessages):
         """Update this side with the messages from the other side."""
 
-        for theirMessage in theirMessages:
+        for theirMessage in theirMessages.values():
             try:
                 self.driver.update(theirMessage)
                 self.state.update(theirMessage) # Would be async.
@@ -184,21 +176,18 @@ class StateController(object):
         messages = self.driver.search() # Would be async.
         stateMessages = self.state.search() # Would be async.
 
-        for message in messages:
-            if message not in stateMessages:
-                # Missing in the other side.
-                changedMessages.append(deepcopy(message))
+        for message in messages.values():
+            if message.uid in stateMessages:
+                if not message.identical(stateMessages[message.uid]):
+                    changedMessages.add(message)
             else:
-                for stateMessage in stateMessages:
-                    if message.uid == stateMessage.uid:
-                        if not message.identical(stateMessage):
-                            changedMessages.append(deepcopy(message))
-                            break #There is no point of iterating further.
+                # Missing in the other side.
+                changedMessages.add(message)
 
-        for stateMessage in stateMessages:
-            if stateMessage not in messages:
-                # TODO: mark message as destroyed from real repository.
-                changedMessages.append(deepcopy(message))
+        # TODO: mark message as destroyed from real repository.
+        # for stateMessage in stateMessages:
+            # if stateMessage not in messages:
+                # changedMessages.add(message)
 
         return changedMessages
 
@@ -247,8 +236,8 @@ if __name__ == '__main__':
     #TODO: None UID is meant for new messages in Maildir.
     # m4l = Message(None, "4 body") # Not at right.
 
-    leftMessages = Messages([m1l, m2l])
-    rghtMessages = Messages([m1r, m2r, m3r])
+    leftMessages = Messages({m1l.uid: m1l, m2l.uid: m2l})
+    rghtMessages = Messages({m1r.uid: m1r, m2r.uid: m2r, m3r.uid: m3r})
 
     # Fill both sides with pre-existing data.
     left = Driver(leftMessages) # Fake those data.
@@ -266,6 +255,7 @@ if __name__ == '__main__':
 
     print("\n# RUN 2")
     m2r.markImportant()
+    left.update(m2r)
     engine.debug("## Before RUN 2")
     engine.run()
     engine.debug("\n## After RUN 2.")
