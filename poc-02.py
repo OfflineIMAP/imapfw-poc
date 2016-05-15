@@ -16,20 +16,24 @@ from functools import total_ordering
 from collections import UserDict
 from copy import deepcopy
 
+def log(*whatever):
+    print(*whatever)
 
 @total_ordering
 class Message(object):
     """Fake the real Message class."""
 
+    DEFAULT_CHANGES = {'read': None, 'important': None}
+
     def __init__(self, uid=None, body=None):
         self.uid = uid
         self.body = body
         self.flags = {'read': False, 'important': False}
-        # Store what was changed. Flags can be:
+        # Store what was changed since previous sync. Flags can be:
         # - True: addition
         # - False: deletion
         # - None: no change
-        self.changes = {'read': None, 'important': None, 'deleted': False}
+        self.changes = self.DEFAULT_CHANGES
 
     def __repr__(self):
         return "<Message %s [%s] '%s'>"% (self.uid, self.flags, self.body)
@@ -43,33 +47,41 @@ class Message(object):
     def __lt__(self, other):
         return self.uid < other
 
+    def fakeWrite(self):
+        """Fake applying changes when written to a storage."""
+
+        for flag, value in self.changes.items():
+            if value is not None:
+                self.flags[flag] = self.changes[flag]
+        self.changes = self.DEFAULT_CHANGES
+
     def getChanges(self):
         return self.changes
 
+    def getFlags(self):
+        return self.flags
+
+    def getUID(self):
+        return self.uid
+
     def identical(self, message):
-        if message.uid != self.uid:
-            return False
-        if message.body != self.body:
-            return False
+        """Compare the flags."""
+
+        assert message.uid == self.uid
+
         if message.flags != self.flags:
             return False
 
         return True # Identical
 
-    def isImportant(self):
-        return self.flags['important']
-
-    def isRead(self):
-        return self.flags['read']
-
     def learnChanges(self, stateMessage):
-        """Learn what was changed is which way."""
+        """Learn what was changed since stateMessage."""
 
-        if self.isImportant() != stateMessage.isImportant():
-            self.changes['important'] = self.isImportant()
-
-        if self.isRead() != stateMessage.isRead():
-            self.changes['read'] = self.isRead()
+        for flag, value in stateMessage.getFlags().items():
+            if value != self.flags[flag]:
+                log("-> Learning change %s: %s: %s"%
+                    (self, flag, self.flags[flag]))
+                self.changes[flag] = self.flags[flag]
 
     def markImportant(self):
         self.flags['important'] = True
@@ -77,8 +89,21 @@ class Message(object):
     def markRead(self):
         self.flags['read'] = True
 
+    def merge(self, message):
+        """Merge changes from message."""
+
+        assert message.getUID() == self.uid
+
+        for flag, change in message.getChanges().items():
+            # Flags with None change did not changed.
+            if change is not None:
+                current = self.changes[flag]
+                if current is None and change != current:
+                    self.changes[flag] = change
+                    log("->  Merging change %s: %s: %s"% (self, flag, change))
+
     def setDeleted(self):
-        self.changes['deleted'] = True
+        self.flags['deleted'] = True
 
     def unmarkImportant(self):
         self.flags['important'] = False
@@ -95,6 +120,19 @@ class Messages(UserDict):
 
         self.data[message.uid] = deepcopy(message)
 
+    def merge(self, theirMessages):
+        """Merge the changes."""
+
+        # From theirs to ours.
+        for uid, theirMessage in theirMessages.items():
+            if uid in self.data:
+                self.data[uid].merge(theirMessage)
+
+        # From ours to theirs.
+        for uid, message in self.items():
+            if uid in theirMessages.data:
+                theirMessages.data[uid].merge(message)
+
 
 # Fake any storage. Allows making this PoC more simple.
 class Storage(UserDict):
@@ -104,7 +142,7 @@ class Storage(UserDict):
     def search(self):
         return self.messages
 
-    def update(self, newMessage):
+    def write(self, newMessage):
         """Update the storage.
 
         newMessage: messages we have to create, update or remove."""
@@ -118,18 +156,19 @@ class Storage(UserDict):
         # what should we do should we remove m4l or what.
 
         #FIXME: updates and new messages are handled. Not the deletions.
+        newMessage.fakeWrite()
         self.messages.add(newMessage)
 
 
 class StateDriver(Storage):
     """Would run in a worker."""
 
-    def update(self, message):
+    def write(self, message):
         """StateDriver Must Contain MetaData for last synced messages rather
         than full emails. For now we are putting full messages."""
 
         #TODO: we have to later think of its implementation and format.
-        super(StateDriver, self).update(message)
+        super(StateDriver, self).write(message)
 
 
 #TODO: fake real drivers.
@@ -161,8 +200,8 @@ class StateController(object):
 
         for theirMessage in theirMessages.values():
             try:
-                self.driver.update(theirMessage)
-                self.state.update(theirMessage) # Would be async.
+                self.driver.write(theirMessage)
+                self.state.write(theirMessage) # Would be async.
             except:
                 raise # Would handle or warn.
 
@@ -176,9 +215,11 @@ class StateController(object):
         messages = self.driver.search() # Would be async.
         stateMessages = self.state.search() # Would be async.
 
-        for message in messages.values():
-            if message.uid in stateMessages:
-                if not message.identical(stateMessages[message.uid]):
+        for uid, message in messages.items():
+            if uid in stateMessages:
+                stateMessage = stateMessages[uid]
+                if not message.identical(stateMessage):
+                    message.learnChanges(stateMessage)
                     changedMessages.add(message)
             else:
                 # Missing in the other side.
@@ -202,18 +243,22 @@ class Engine(object):
         self.right = StateController(right, state)
 
     def debug(self, title):
-        print(title)
-        print("left:  %s"% self.left.driver.messages)
-        print("rght:  %s"% self.right.driver.messages)
-        print("state: %s"% self.left.state.messages) # leftState == rightState
+        log(title)
+        log("left:  %s"% self.left.driver.messages)
+        log("rght:  %s"% self.right.driver.messages)
+        log("state: %s"% self.left.state.messages) # leftState == rightState
+        log("")
 
     def run(self):
         leftMessages = self.left.getChanges() # Would be async.
         rightMessages = self.right.getChanges() # Would be async.
 
-        print("\n## Changes found:")
-        print("- from left: %s"% leftMessages)
-        print("- from rght: %s"% rightMessages)
+        # Merge the changes.
+        leftMessages.merge(rightMessages)
+
+        log("\n## Changes found:")
+        log("- from left: %s"% leftMessages)
+        log("- from rght: %s"% rightMessages)
 
         self.left.update(rightMessages)
         self.right.update(leftMessages)
@@ -227,13 +272,10 @@ if __name__ == '__main__':
 
     m2r = Message(2, "2 body")
     m2l = Message(2, "2 body") # Same as m2r.
-    #TODO: first sync when one side is not empty or identical.
-    # Supporting this feature is really challenging!
     # m2l.markRead()              # Same as m2r but read.
 
     m3r = Message(3, "3 body") # Not at left.
 
-    #TODO: None UID is meant for new messages in Maildir.
     # m4l = Message(None, "4 body") # Not at right.
 
     leftMessages = Messages({m1l.uid: m1l, m2l.uid: m2l})
@@ -246,19 +288,28 @@ if __name__ == '__main__':
     # Start engine.
     engine = Engine(left, right)
 
-    print("\n# RUN 1")
+    log("\n# RUN 1")
     engine.debug("## Before RUN 1")
     engine.run()
     engine.debug("\n## After RUN 1.")
-    print("\n# RUN 1 done")
+    log("\n# RUN 1 done")
 
 
-    print("\n# RUN 2")
+    log("\n# RUN 2")
     m2r.markImportant()
-    left.update(m2r)
+    right.write(m2r)
+    m2l.markRead()
+    left.write(m2l)
     engine.debug("## Before RUN 2")
     engine.run()
     engine.debug("\n## After RUN 2.")
-    print("\n# RUN 2 done")
+    log("\n# RUN 2 done")
 
-    #TODO: PASS 3 with changed messages.
+    #TODO: PASS with changed messages.
+
+
+    log("\n# LAST RUN (no changes)")
+    engine.debug("## Before RUN 2")
+    engine.run()
+    engine.debug("\n## After RUN 2.")
+    log("\n# LAST RUN done")
