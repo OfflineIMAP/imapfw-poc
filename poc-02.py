@@ -28,12 +28,16 @@ class Message(object):
     def __init__(self, uid=None, body=None):
         self.uid = uid
         self.body = body
+
+        self.unkown = False # This is a new message.
         self.flags = {'read': False, 'important': False}
         # Store what was changed since previous sync. Flags can be:
         # - True: addition
         # - False: deletion
         # - None: no change
         self.changes = self.DEFAULT_CHANGES
+        # Update the state only with those changes.
+        self.stateChanges = self.DEFAULT_CHANGES
 
     def __repr__(self):
         return "<Message %s [%s] '%s'>"% (self.uid, self.flags, self.body)
@@ -53,6 +57,11 @@ class Message(object):
         for flag, value in self.changes.items():
             if value is not None:
                 self.flags[flag] = self.changes[flag]
+
+        for flag, value in self.stateChanges.items():
+            if value is not None:
+                self.flags[flag] = self.stateChanges[flag]
+
         self.changes = self.DEFAULT_CHANGES
 
     def getChanges(self):
@@ -89,18 +98,52 @@ class Message(object):
     def markRead(self):
         self.flags['read'] = True
 
+    def markUnkown(self):
+        self.unkown = True
+
     def merge(self, message):
-        """Merge changes from message."""
+        """Merge changes for messages and self to both."""
 
         assert message.getUID() == self.uid
 
-        for flag, change in message.getChanges().items():
-            # Flags with None change did not changed.
-            if change is not None:
-                current = self.changes[flag]
-                if current is None and change != current:
+        otherChanges = deepcopy(message.getChanges())
+        ourChanges = deepcopy(self.changes)
+
+        for flag, change in otherChanges.items():
+            current = self.changes[flag]
+            # "change is None" means it did not change since previous sync.
+            if change is not None or current is not None:
+                if change == current:
+                    # We already have this change!
+                    log("-> Ignoring change {%s: %s} from both sides"
+                        "for driver"% (flag, change))
+                    self.changes[flag] = None
+                    message.changes[flag] = None
+                    self.stateChanges[flag] = current
+                    continue
+                if current is None:
+                    # We don't have this change. Duplicate the change for
+                    # the other side to ensure the results are identical.
                     self.changes[flag] = change
-                    log("->  Merging change %s: %s: %s"% (self, flag, change))
+                    log("->  Merging change %s: %s: %s"%
+                        (self, flag, change))
+                if change is None:
+                    # Other doesn't have this change.
+                    message.changes[flag] = current
+                    log("->  Merging change %s: %s: %s"%
+                        (message, flag, current))
+
+
+    def hasChanges(self):
+        """Changes must be written by the driver."""
+
+        if self.unkown is True:
+            return True
+
+        for change in self.changes.values():
+            if change is not None:
+                return True
+        return False
 
     def setDeleted(self):
         self.flags['deleted'] = True
@@ -123,15 +166,10 @@ class Messages(UserDict):
     def merge(self, theirMessages):
         """Merge the changes."""
 
-        # From theirs to ours.
+        # Merge applies to both sides.
         for uid, theirMessage in theirMessages.items():
             if uid in self.data:
                 self.data[uid].merge(theirMessage)
-
-        # From ours to theirs.
-        for uid, message in self.items():
-            if uid in theirMessages.data:
-                theirMessages.data[uid].merge(message)
 
 
 # Fake any storage. Allows making this PoC more simple.
@@ -175,7 +213,20 @@ class StateDriver(Storage):
 #TODO: Assign UID when storage is IMAP.
 class Driver(Storage):
     """Fake a driver."""
-    pass
+
+    def __init__(self, name, *args, **kw):
+        self.name = name
+        super(Driver, self).__init__(*args, **kw)
+
+    def writeFromOutside(self, message):
+        super(Driver, self).write(message)
+
+    def write(self, message):
+        if message.hasChanges():
+            super(Driver, self).write(message)
+        else:
+            log(" -> %s: changes ignored for %s (already up-to-date)"%
+                (self.name, message))
 
 
 class StateController(object):
@@ -223,6 +274,7 @@ class StateController(object):
                     changedMessages.add(message)
             else:
                 # Missing in the other side.
+                message.markUnkown()
                 changedMessages.add(message)
 
         # TODO: mark message as destroyed from real repository.
@@ -278,12 +330,14 @@ if __name__ == '__main__':
 
     # m4l = Message(None, "4 body") # Not at right.
 
-    leftMessages = Messages({m1l.uid: m1l, m2l.uid: m2l})
-    rghtMessages = Messages({m1r.uid: m1r, m2r.uid: m2r, m3r.uid: m3r})
+    #leftMessages = Messages({m1l.uid: m1l, m2l.uid: m2l})
+    # TODO: start empty for now.
+    leftMessages = Messages()
+    rghtMessages = Messages({m1r.uid: m1r, m2r.uid: m2r})
 
     # Fill both sides with pre-existing data.
-    left = Driver(leftMessages) # Fake those data.
-    right = Driver(rghtMessages) # Fake those data.
+    left = Driver("left", leftMessages) # Fake those data.
+    right = Driver("rght", rghtMessages) # Fake those data.
 
     # Start engine.
     engine = Engine(left, right)
@@ -295,15 +349,26 @@ if __name__ == '__main__':
     log("\n# RUN 1 done")
 
 
-    log("\n# RUN 2")
+    log("\n# RUN 2 (different changes on same message)")
     m2r.markImportant()
-    right.write(m2r)
+    right.writeFromOutside(m2r)
     m2l.markRead()
-    left.write(m2l)
+    left.writeFromOutside(m2l)
     engine.debug("## Before RUN 2")
     engine.run()
     engine.debug("\n## After RUN 2.")
     log("\n# RUN 2 done")
+
+
+    log("\n# RUN 3 (same changes from both sides)")
+    m2r.unmarkImportant()
+    m2r.markRead()
+    right.writeFromOutside(m2r)
+    left.writeFromOutside(m2r)
+    engine.debug("## Before RUN 3")
+    engine.run()
+    engine.debug("\n## After RUN 3.")
+    log("\n# RUN 3 done")
 
     #TODO: PASS with changed messages.
 
