@@ -185,14 +185,6 @@ class Storage(UserDict):
 
         newMessage: messages we have to create, update or remove."""
 
-        #FIXME: If we provide try to update leftside first it will be updated as
-        # per right side changes provided by Engine.  For Example: m2l is marked
-        # read and m2r is unread. Now when we are first trying to update left
-        # side with changes. We are making it unread on both the side.  Where as
-        # if we first update right side we will have m2l as well as m2r as read.
-        # same goes for removal. Lets say there is m4l but m4r is missing . So
-        # what should we do should we remove m4l or what.
-
         #FIXME: updates and new messages are handled. Not the deletions.
         newMessage.fakeWrite()
         self.messages.add(newMessage)
