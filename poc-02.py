@@ -170,10 +170,10 @@ class Messages(UserDict):
 # Fake any storage. Allows making this PoC more simple.
 class Storage(UserDict):
     def __init__(self, dict_messages):
-        self.messages = Messages(dict_messages) # Fake the real data.
+        self.data = Messages(dict_messages) # Fake the real data.
 
     def search(self):
-        return self.messages
+        return self.data
 
     def write(self, newMessage):
         """Update the storage.
@@ -181,7 +181,7 @@ class Storage(UserDict):
         newMessage: messages we have to create, update or remove."""
 
         #FIXME: updates and new messages are handled. Not the deletions.
-        self.messages.add(newMessage)
+        self.data.add(newMessage)
 
 class StateStorage(Storage):
     """Would run in a worker."""
@@ -192,9 +192,9 @@ class StateStorage(Storage):
 
         #TODO: we have to later think of its implementation and format.
         uid = message.getUID()
-        if uid in self.messages:
+        if uid in self.data:
             # Update message in storage.
-            storageMessage = self.messages[uid]
+            storageMessage = self.data[uid]
             message.fakeStateWrites(storageMessage)
         else:
             super(StateStorage, self).write(message)
@@ -214,9 +214,9 @@ class Driver(Storage):
 
     def write(self, message):
         uid = message.getUID()
-        if uid in self.messages:
+        if uid in self.data:
             # Update message in storage.
-            storageMessage = self.messages[uid]
+            storageMessage = self.data[uid]
             message.fakeDriverWrites(storageMessage)
         else:
             if message.hasChanges() is True:
@@ -293,9 +293,9 @@ class Engine(object):
 
     def debug(self, title):
         log(title)
-        log("left:  %s"% self.left.driver.messages)
-        log("rght:  %s"% self.right.driver.messages)
-        log("state: %s"% self.left.state.messages) # leftState == rightState
+        log("left:  %s"% self.left.driver.data)
+        log("rght:  %s"% self.right.driver.data)
+        log("state: %s"% self.left.state.data) # leftState == rightState
         log("")
 
     def run(self):
