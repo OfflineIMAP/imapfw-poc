@@ -351,7 +351,7 @@ if __name__ == '__main__':
 
 
     log("\n# LAST RUN (no changes)")
-    engine.debug("## Before RUN 2")
+    engine.debug("## Before LAST RUN")
     engine.run()
-    engine.debug("\n## After RUN 2.")
+    engine.debug("\n## After LAST RUN.")
     log("\n# LAST RUN done")
