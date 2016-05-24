@@ -51,31 +51,25 @@ class Message(object):
     def __lt__(self, other):
         return self.uid < other
 
-    def fakeDriverWrites(self):
+    def fakeDriverWrites(self, storageMessage):
         """Fake applying changes when written to a driver."""
 
         if self.unkown is False:
             for flag, value in self.changes.items():
                 if value is not None:
-                    self.flags[flag] = self.changes[flag]
+                    storageMessage.flags[flag] = self.changes[flag]
 
-        self.changes = self.DEFAULT_CHANGES
-        self.stateChanges = self.DEFAULT_CHANGES
-
-    def fakeStateWrites(self):
+    def fakeStateWrites(self, storageMessage):
         """Fake applying changes when written to the state."""
 
         if self.unkown is False:
             for flag, value in self.changes.items():
                 if value is not None:
-                    self.flags[flag] = self.changes[flag]
+                    storageMessage.flags[flag] = self.changes[flag]
 
             for flag, value in self.stateChanges.items():
                 if value is not None:
-                    self.flags[flag] = self.stateChanges[flag]
-
-        self.changes = self.DEFAULT_CHANGES
-        self.stateChanges = self.DEFAULT_CHANGES
+                    storageMessage.flags[flag] = self.stateChanges[flag]
 
     def getChanges(self):
         return self.changes
@@ -197,8 +191,13 @@ class StateStorage(Storage):
         than full emails. For now we are putting full messages."""
 
         #TODO: we have to later think of its implementation and format.
-        message.fakeStateWrites()
-        super(StateStorage, self).write(message)
+        uid = message.getUID()
+        if uid in self.messages:
+            # Update message in storage.
+            storageMessage = self.messages[uid]
+            message.fakeStateWrites(storageMessage)
+        else:
+            super(StateStorage, self).write(message)
 
 
 #TODO: fake real drivers.
@@ -214,12 +213,17 @@ class Driver(Storage):
         super(Driver, self).write(message)
 
     def write(self, message):
-        if message.hasChanges():
-            message.fakeDriverWrites()
-            super(Driver, self).write(message)
+        uid = message.getUID()
+        if uid in self.messages:
+            # Update message in storage.
+            storageMessage = self.messages[uid]
+            message.fakeDriverWrites(storageMessage)
         else:
-            log(" -> %s: changes ignored for %s (already up-to-date)"%
-                (self.name, message))
+            if message.hasChanges() is True:
+                super(Driver, self).write(message)
+            else:
+                log(" -> %s: changes ignored for %s (already up-to-date)"%
+                    (self.name, message))
 
 
 class StateController(object):
