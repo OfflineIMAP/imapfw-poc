@@ -169,24 +169,13 @@ class Messages(UserDict):
 
 # Fake any storage. Allows making this PoC more simple.
 class Storage(UserDict):
-    def __init__(self, dict_messages):
-        self.data = Messages(dict_messages) # Fake the real data.
-
     def search(self):
         return self.data
-
-    def write(self, newMessage):
-        """Update the storage.
-
-        newMessage: messages we have to create, update or remove."""
-
-        #FIXME: updates and new messages are handled. Not the deletions.
-        self.data.add(newMessage)
 
 class StateStorage(Storage):
     """Would run in a worker."""
 
-    def write(self, message):
+    def update(self, message):
         """StateDriver Must Contain MetaData for last synced messages rather
         than full emails. For now we are putting full messages."""
 
@@ -197,7 +186,7 @@ class StateStorage(Storage):
             storageMessage = self.data[uid]
             message.fakeStateWrites(storageMessage)
         else:
-            super(StateStorage, self).write(message)
+            self.data[uid] = message
 
 
 #TODO: fake real drivers.
@@ -209,21 +198,20 @@ class Driver(Storage):
         self.name = name
         super(Driver, self).__init__(*args, **kw)
 
-    def writeFromOutside(self, message):
-        super(Driver, self).write(message)
+    def fakeChange(self, message):
+        """Add or erase with newMessage."""
 
-    def write(self, message):
+        #FIXME: updates and new messages are handled. Not the deletions.
+        self.data[message.uid] = deepcopy(message)
+
+    def update(self, message):
         uid = message.getUID()
         if uid in self.data:
             # Update message in storage.
             storageMessage = self.data[uid]
             message.fakeDriverWrites(storageMessage)
         else:
-            if message.hasChanges() is True:
-                super(Driver, self).write(message)
-            else:
-                log(" -> %s: changes ignored for %s (already up-to-date)"%
-                    (self.name, message))
+            self.data[uid] = message
 
 
 class StateController(object):
@@ -248,8 +236,8 @@ class StateController(object):
 
         for theirMessage in theirMessages.values():
             try:
-                self.driver.write(theirMessage)
-                self.state.write(theirMessage) # Would be async.
+                self.driver.update(theirMessage)
+                self.state.update(theirMessage) # Would be async.
             except:
                 raise # Would handle or warn.
 
@@ -285,7 +273,7 @@ class StateController(object):
 class Engine(object):
     """The engine."""
     def __init__(self, left, right):
-        state = StateStorage([]) # Would be an emitter.
+        state = StateStorage() # Would be an emitter.
         # Add the state controller to the chain of controllers of the drivers.
         # Real driver might need API to work on chained controllers.
         self.left = StateController(left, state)
@@ -314,32 +302,24 @@ class Engine(object):
 
 
 if __name__ == '__main__':
-
-    # Messages
-    m1r = Message(1, "1 body")
-    m1l = Message(1, "1 body") # Same as m1r.
-
-    m2r = Message(2, "2 body")
-    m2l = Message(2, "2 body") # Same as m2r.
-    # m2l.markRead()              # Same as m2r but read.
-
-    m3r = Message(3, "3 body") # Not at left.
-
-    # m4l = Message(None, "4 body") # Not at right.
-
-    #leftMessages = Messages({m1l.uid: m1l, m2l.uid: m2l})
-    # TODO: start empty for now.
-    leftMessages = Messages()
-    rghtMessages = Messages({m1r.uid: m1r, m2r.uid: m2r})
-
     # Fill both sides with pre-existing data.
-    left = Driver("left", leftMessages) # Fake those data.
-    right = Driver("rght", rghtMessages) # Fake those data.
+    left = Driver("left")  # Fake those data.
+    right = Driver("rght") # Fake those data.
 
     # Start engine.
     engine = Engine(left, right)
 
+    log("\n# RUN 0")
+    engine.debug("## Before RUN 0")
+    engine.run()
+    engine.debug("\n## After RUN 0.")
+    log("\n# RUN 0 done")
+
     log("\n# RUN 1")
+    m1 = Message(1, "1 body") # Same as m1r.
+    m2 = Message(2, "2 body") # Same as m2r.
+    left.fakeChange(m1)
+    left.fakeChange(m2)
     engine.debug("## Before RUN 1")
     engine.run()
     engine.debug("\n## After RUN 1.")
@@ -347,10 +327,10 @@ if __name__ == '__main__':
 
 
     log("\n# RUN 2 (different changes on same message)")
-    m2r.markImportant()
-    right.writeFromOutside(m2r)
-    m2l.markRead()
-    left.writeFromOutside(m2l)
+    m2.markImportant()
+    right.fakeChange(m2)
+    m2.markRead()
+    left.fakeChange(m2)
     engine.debug("## Before RUN 2")
     engine.run()
     engine.debug("\n## After RUN 2.")
@@ -358,10 +338,10 @@ if __name__ == '__main__':
 
 
     log("\n# RUN 3 (same changes from both sides)")
-    m2r.unmarkImportant()
-    m2r.markRead()
-    right.writeFromOutside(m2r)
-    left.writeFromOutside(m2r)
+    m2.unmarkImportant()
+    m2.markRead()
+    right.fakeChange(m2)
+    left.fakeChange(m2)
     engine.debug("## Before RUN 3")
     engine.run()
     engine.debug("\n## After RUN 3.")
