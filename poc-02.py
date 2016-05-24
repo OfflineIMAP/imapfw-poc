@@ -51,8 +51,18 @@ class Message(object):
     def __lt__(self, other):
         return self.uid < other
 
-    def fakeWrite(self):
-        """Fake applying changes when written to a storage."""
+    def fakeDriverWrites(self):
+        """Fake applying changes when written to a driver."""
+
+        for flag, value in self.changes.items():
+            if value is not None:
+                self.flags[flag] = self.changes[flag]
+
+        self.changes = self.DEFAULT_CHANGES
+        self.stateChanges = self.DEFAULT_CHANGES
+
+    def fakeStateWrites(self):
+        """Fake applying changes when written to the state."""
 
         for flag, value in self.changes.items():
             if value is not None:
@@ -63,6 +73,7 @@ class Message(object):
                 self.flags[flag] = self.stateChanges[flag]
 
         self.changes = self.DEFAULT_CHANGES
+        self.stateChanges = self.DEFAULT_CHANGES
 
     def getChanges(self):
         return self.changes
@@ -186,11 +197,9 @@ class Storage(UserDict):
         newMessage: messages we have to create, update or remove."""
 
         #FIXME: updates and new messages are handled. Not the deletions.
-        newMessage.fakeWrite()
         self.messages.add(newMessage)
 
-
-class StateDriver(Storage):
+class StateStorage(Storage):
     """Would run in a worker."""
 
     def write(self, message):
@@ -198,7 +207,8 @@ class StateDriver(Storage):
         than full emails. For now we are putting full messages."""
 
         #TODO: we have to later think of its implementation and format.
-        super(StateDriver, self).write(message)
+        message.fakeStateWrites()
+        super(StateStorage, self).write(message)
 
 
 #TODO: fake real drivers.
@@ -215,6 +225,7 @@ class Driver(Storage):
 
     def write(self, message):
         if message.hasChanges():
+            message.fakeDriverWrites()
             super(Driver, self).write(message)
         else:
             log(" -> %s: changes ignored for %s (already up-to-date)"%
@@ -280,7 +291,7 @@ class StateController(object):
 class Engine(object):
     """The engine."""
     def __init__(self, left, right):
-        state = StateDriver([]) # Would be an emitter.
+        state = StateStorage([]) # Would be an emitter.
         # Add the state controller to the chain of controllers of the drivers.
         # Real driver might need API to work on chained controllers.
         self.left = StateController(left, state)
