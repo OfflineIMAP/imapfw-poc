@@ -329,6 +329,7 @@ if __name__ == '__main__':
     log("\n# RUN 2 (different changes on same message)")
     m2.markImportant()
     right.fakeChange(m2)
+    m2.unmarkImportant()
     m2.markRead()
     left.fakeChange(m2)
     engine.debug("## Before RUN 2")
