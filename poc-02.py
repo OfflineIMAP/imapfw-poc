@@ -302,8 +302,8 @@ class Engine(object):
         leftMessages.merge(rightMessages)
 
         log("\n## Changes found:")
-        log("- from left: %s"% leftMessages)
-        log("- from rght: %s"% rightMessages)
+        log("- from left: %s"% list(leftMessages.data.keys()))
+        log("- from rght: %s"% list(rightMessages.data.keys()))
 
         self.left.update(rightMessages)
         self.right.update(leftMessages)
