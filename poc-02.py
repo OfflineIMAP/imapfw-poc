@@ -54,9 +54,10 @@ class Message(object):
     def fakeDriverWrites(self):
         """Fake applying changes when written to a driver."""
 
-        for flag, value in self.changes.items():
-            if value is not None:
-                self.flags[flag] = self.changes[flag]
+        if self.unkown is False:
+            for flag, value in self.changes.items():
+                if value is not None:
+                    self.flags[flag] = self.changes[flag]
 
         self.changes = self.DEFAULT_CHANGES
         self.stateChanges = self.DEFAULT_CHANGES
@@ -64,13 +65,14 @@ class Message(object):
     def fakeStateWrites(self):
         """Fake applying changes when written to the state."""
 
-        for flag, value in self.changes.items():
-            if value is not None:
-                self.flags[flag] = self.changes[flag]
+        if self.unkown is False:
+            for flag, value in self.changes.items():
+                if value is not None:
+                    self.flags[flag] = self.changes[flag]
 
-        for flag, value in self.stateChanges.items():
-            if value is not None:
-                self.flags[flag] = self.stateChanges[flag]
+            for flag, value in self.stateChanges.items():
+                if value is not None:
+                    self.flags[flag] = self.stateChanges[flag]
 
         self.changes = self.DEFAULT_CHANGES
         self.stateChanges = self.DEFAULT_CHANGES
@@ -83,6 +85,17 @@ class Message(object):
 
     def getUID(self):
         return self.uid
+
+    def hasChanges(self):
+        """Changes must be written by the driver."""
+
+        if self.unkown is True:
+            return True
+
+        for change in self.changes.values():
+            if change is not None:
+                return True
+        return False
 
     def identical(self, message):
         """Compare the flags."""
@@ -113,7 +126,7 @@ class Message(object):
         self.unkown = True
 
     def merge(self, message):
-        """Merge changes for messages and self to both."""
+        """Ignore changes identical in both sides for the drivers."""
 
         assert message.getUID() == self.uid
 
@@ -125,36 +138,13 @@ class Message(object):
             # "change is None" means it did not change since previous sync.
             if change is not None or current is not None:
                 if change == current:
-                    # We already have this change!
+                    # Driver already have this change! Remove the change for the
+                    # drivers and only update the state.
                     log("-> Ignoring change {%s: %s} from both sides"
                         "for driver"% (flag, change))
                     self.changes[flag] = None
                     message.changes[flag] = None
                     self.stateChanges[flag] = current
-                    continue
-                if current is None:
-                    # We don't have this change. Duplicate the change for
-                    # the other side to ensure the results are identical.
-                    self.changes[flag] = change
-                    log("->  Merging change %s: %s: %s"%
-                        (self, flag, change))
-                if change is None:
-                    # Other doesn't have this change.
-                    message.changes[flag] = current
-                    log("->  Merging change %s: %s: %s"%
-                        (message, flag, current))
-
-
-    def hasChanges(self):
-        """Changes must be written by the driver."""
-
-        if self.unkown is True:
-            return True
-
-        for change in self.changes.values():
-            if change is not None:
-                return True
-        return False
 
     def setDeleted(self):
         self.flags['deleted'] = True
