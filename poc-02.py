@@ -3,13 +3,13 @@
 # https://github.com/OfflineIMAP/imapfw/wiki/sync-02
 #
 # TODO:
-# 1. Merge the changes in the engine for messages having changes in both sides.
-#    This allows to mark identical changes to avoid propagating them to the
-#    driver.
-# 2. Learn the state driver to only record successful updates.
-# 3. Learn deletions.
-# 4. Expose updates to the rascal.
-# 5. Turn into concurrent mode.
+# [x] Merge the changes in the engine for messages having changes in both sides.
+#     This allows to mark identical changes to avoid propagating them to the
+#     driver.
+# [x] Learn the state driver to only record successful updates.
+# [ ] Learn deletions.
+# [ ] Expose updates to the rascal.
+# [ ] Turn into concurrent mode.
 
 
 from functools import total_ordering
@@ -194,6 +194,8 @@ class StateStorage(Storage):
 class Driver(Storage):
     """Fake a driver."""
 
+    FakeDriverWriteError = False
+
     def __init__(self, name, *args, **kw):
         self.name = name
         super(Driver, self).__init__(*args, **kw)
@@ -205,6 +207,9 @@ class Driver(Storage):
         self.data[message.uid] = deepcopy(message)
 
     def update(self, message):
+        if self.FakeDriverWriteError is True:
+            self.FakeDriverWriteError = False
+            raise IOError("write by driver failed")
         uid = message.getUID()
         if uid in self.data:
             # Update message in storage.
@@ -238,8 +243,8 @@ class StateController(object):
             try:
                 self.driver.update(theirMessage)
                 self.state.update(theirMessage) # Would be async.
-            except:
-                raise # Would handle or warn.
+            except IOError as e:
+                print("Write error on %s failed: %s"% (self.driver.name, e))
 
     #FIXME: we are lying around. The real search() should return full
     # messages or have parameter to set what we request exactly.
@@ -323,7 +328,7 @@ if __name__ == '__main__':
     engine.debug("## Before RUN 1")
     engine.run()
     engine.debug("\n## After RUN 1.")
-    log("\n# RUN 1 done")
+    log("# RUN 1 done\n")
 
 
     log("\n# RUN 2 (different changes on same message)")
@@ -335,7 +340,7 @@ if __name__ == '__main__':
     engine.debug("## Before RUN 2")
     engine.run()
     engine.debug("\n## After RUN 2.")
-    log("\n# RUN 2 done")
+    log("# RUN 2 done\n")
 
 
     log("\n# RUN 3 (same changes from both sides)")
@@ -346,7 +351,42 @@ if __name__ == '__main__':
     engine.debug("## Before RUN 3")
     engine.run()
     engine.debug("\n## After RUN 3.")
-    log("\n# RUN 3 done")
+    log("# RUN 3 done\n")
+
+
+    log("\n# RUN 4 (left write error)")
+    m2.markImportant()
+    right.fakeChange(m2)
+    left.FakeDriverWriteError = True
+    engine.debug("## Before RUN 4")
+    engine.run()
+    engine.debug("\n## After RUN 4.")
+    log("# RUN 4 done\n")
+
+    log("\n# RUN 5 (sync after left write error)")
+    engine.debug("## Before RUN 5")
+    engine.run()
+    engine.debug("\n## After RUN 5.")
+    log("# RUN 5 done\n")
+
+
+    log("\n# RUN 6 (changes from both sides, left write fails)")
+    m2.unmarkImportant()
+    right.fakeChange(m2)
+    m2.markImportant()
+    m2.unmarkRead()
+    left.fakeChange(m2)
+    left.FakeDriverWriteError = True
+    engine.debug("## Before RUN 6")
+    engine.run()
+    engine.debug("\n## After RUN 6.")
+    log("# RUN 6 done\n")
+
+    log("\n# RUN 7 (sync after left write fails)")
+    engine.debug("## Before RUN 7")
+    engine.run()
+    engine.debug("\n## After RUN 7.")
+    log("# RUN 7 done\n")
 
     #TODO: PASS with changed messages.
 
@@ -355,4 +395,4 @@ if __name__ == '__main__':
     engine.debug("## Before LAST RUN")
     engine.run()
     engine.debug("\n## After LAST RUN.")
-    log("\n# LAST RUN done")
+    log("# LAST RUN done\n")
